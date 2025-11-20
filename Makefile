@@ -1,4 +1,5 @@
 make:
-	gcc -o main main.c 
+	gcc -o main_server main_server.c 
+	gcc -o main_client main_client.c
 clean:
-	rm main
+	rm main_client main_server
