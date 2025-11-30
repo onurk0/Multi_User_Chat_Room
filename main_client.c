@@ -55,6 +55,8 @@ typedef struct _ThreadArgs {
 } ThreadArgs;
 
 // Simple hash function for usernames
+// this ensures consistency among client
+// terminals
 int hash_username(const char *username) {
   int hash = 0;
   for (int i = 0; username[i] != '\0'; i++) {
@@ -193,8 +195,12 @@ void *thread_main_send(void *args) {
 
 int main(int argc, char *argv[]) {
   char name[100];
-  if (argc < 2)
-    error("Please speicify hostname");
+  char room_request[50]; // to store "new" or requested room number
+  if (argc < 3)
+    error("Usage: ./main_client <IP> <room_number or 'new'>");
+
+  strncpy(room_request, argv[2], sizeof(room_request) - 1);
+  room_request[sizeof(room_request) - 1] = '\0';
 
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0)
@@ -209,13 +215,26 @@ int main(int argc, char *argv[]) {
 
   printf("Try connecting to %s...\n", inet_ntoa(serv_addr.sin_addr));
 
-  // get user's name (up to 99 characters plus null terminator)
-  printf("Type your user name:\n");
-  fgets(name, 99, stdin);
-
   int status = connect(sockfd, (struct sockaddr *)&serv_addr, slen);
   if (status < 0)
     error("ERROR connecting");
+
+  // after connecting, send room request to server
+  send(sockfd, room_request, strlen(room_request), 0);
+
+  // receive room assignment from server
+  char room_response[100];
+  int n = recv(sockfd, room_response, 99, 0);
+  if (n <= 0)
+    error("ERROR receiving room assignment");
+  room_response[n] = '\0';
+
+  // print room info (or error)
+  printf("%s\n", room_response);
+
+  // get user's name (up to 99 characters plus null terminator)
+  printf("Type your user name:\n");
+  fgets(name, 99, stdin);
   send(sockfd, name, strlen(name), 0);
 
   pthread_t tid1;
