@@ -14,6 +14,8 @@
 void print_clients();
 void remove_client(int clisockfd);
 int room_exists(int room_id);
+int count_users_in_room(int room_id);
+int get_room_list(int *room_ids, int max_rooms);
 
 void error(const char *msg) {
   perror(msg);
@@ -56,6 +58,47 @@ int room_exists(int room_id) {
   // room doesn't exist
   pthread_mutex_unlock(&clients_mutex);
   return 0;
+}
+
+// function to count users in a given room
+int count_users_in_room(int room_id) {
+  int count = 0;
+  pthread_mutex_lock(&clients_mutex);
+  USR *cur = head;
+
+  while (cur != NULL) {
+    if (cur->room_id == room_id)
+      count++;
+    cur = cur->next;
+  }
+  pthread_mutex_unlock(&clients_mutex);
+  return count;
+}
+
+int get_room_list(int *room_ids, int max_rooms) {
+  pthread_mutex_lock(&clients_mutex);
+  int num_rooms = 0;
+  USR *cur = head;
+
+  while (cur != NULL && num_rooms < max_rooms) {
+    // check if this room_id is already in our list
+    int found = 0;
+    for (int i = 0; i < num_rooms; i++) {
+      if (room_ids[i] == cur->room_id) {
+        found = 1;
+        break;
+      }
+    }
+
+    // if room is not found, add ip_str
+    if (!found) {
+      room_ids[num_rooms] = cur->room_id;
+      num_rooms++;
+    }
+    cur = cur->next;
+  }
+  pthread_mutex_unlock(&clients_mutex);
+  return num_rooms;
 }
 
 // adds a client to the end of the list
@@ -241,7 +284,7 @@ void *thread_main(void *args) {
   char buffer[256];
   int nrcv;
 
-  // receive room request or number
+  // receive initial request
   nrcv = recv(clisockfd, buffer, 255, 0);
   // close if connection failed
   if (nrcv <= 0) {
@@ -250,20 +293,99 @@ void *thread_main(void *args) {
   }
   buffer[nrcv] = '\0'; // null terminate what we received
 
-  // if "new", assign a room number
-  // if a number, check if room exists
-  // send response back to client
-  if (strcmp(buffer, "new") == 0) {
-    // client wants a new room - assign next available room number
+  // check if entry is "list", "new", or a room number
+  if (strcmp(buffer, "list") == 0) {
+    // get list of rooms
+    int room_ids[20]; // support for 20 rooms
+    int num_rooms = get_room_list(room_ids, 20);
+
+    if (num_rooms == 0) {
+      // no rooms exist, make a new one
+      pthread_mutex_lock(&room_mutex);
+      assigned_room = next_room_id;
+      next_room_id++;
+      pthread_mutex_unlock(&room_mutex);
+
+      // send success response
+      char response[200];
+      sprintf(response, "No rooms available. Created new room: %d\n",
+              assigned_room);
+      send(clisockfd, response, strlen(response), 0);
+    } else {
+
+      char response[1024];
+      sprintf(response, "The following room options are available:\n");
+      // TODO: loop through room_ids and add each room to response
+      // for each room, get count with count_users_in_room()
+      // format: Room X: Y people
+      for (int i = 0; i < num_rooms; i++) {
+        char line[100];
+        int count = count_users_in_room(room_ids[i]);
+        sprintf(line, "Room %d: %d %s\n", room_ids[i], count,
+                count == 1 ? "person" : "people");
+        strcat(response, line);
+      }
+
+      // send the list
+      send(clisockfd, response, strlen(response), 0);
+
+      // receive user's room choice
+      nrcv = recv(clisockfd, buffer, 255, 0);
+      if (nrcv <= 0) {
+        close(clisockfd);
+        return NULL;
+      }
+      buffer[nrcv] = '\0';
+
+      // TODO: process choice
+      if (strcmp(buffer, "new") == 0) {
+        // User chose to create new room
+        pthread_mutex_lock(&room_mutex);
+        assigned_room = next_room_id;
+        next_room_id++;
+        pthread_mutex_unlock(&room_mutex);
+
+        char response2[100];
+        sprintf(response2, "Connected with new room number: %d\n",
+                assigned_room);
+        send(clisockfd, response2, strlen(response2), 0);
+
+      } else {
+        // User chose existing room number
+        int requested_room = atoi(buffer);
+
+        if (requested_room <= 0) {
+          char response2[] = "ERROR: Invalid room number\n";
+          send(clisockfd, response2, strlen(response2), 0);
+          close(clisockfd);
+          return NULL;
+        }
+
+        if (room_exists(requested_room)) {
+          assigned_room = requested_room;
+          char response2[100];
+          sprintf(response2, "Connected to room %d\n", assigned_room);
+          send(clisockfd, response2, strlen(response2), 0);
+        } else {
+          char response2[100];
+          sprintf(response2, "ERROR: Room %d does not exist\n", requested_room);
+          send(clisockfd, response2, strlen(response2), 0);
+          close(clisockfd);
+          return NULL;
+        }
+      }
+    }
+
+  } else if (strcmp(buffer, "new") == 0) {
     pthread_mutex_lock(&room_mutex);
     assigned_room = next_room_id;
     next_room_id++;
     pthread_mutex_unlock(&room_mutex);
 
-    // send success response
     char response[100];
-    sprintf(response, "Connected with new room number: %d\n", assigned_room);
+    sprintf(response, "Connected with new room number %d\n", assigned_room);
     send(clisockfd, response, strlen(response), 0);
+
   } else {
     // client wants to join an existing room
     int requested_room = atoi(buffer); // convert string to int
@@ -292,15 +414,15 @@ void *thread_main(void *args) {
     }
   }
 
-  // receive username, removing newline if present
+  // receive username
   char username[50];
   nrcv = recv(clisockfd, buffer, 255, 0);
   if (nrcv <= 0) {
     close(clisockfd);
     return NULL;
   }
-  buffer[nrcv] = '\0';
 
+  buffer[nrcv] = '\0';
   strncpy(username, buffer, sizeof(username) - 1);
   username[sizeof(username) - 1] = '\0';
 
@@ -335,7 +457,8 @@ void *thread_main(void *args) {
       char leave_msg[512];
       char ip_str[INET_ADDRSTRLEN];
       inet_ntop(AF_INET, &(cliaddr.sin_addr), ip_str, INET_ADDRSTRLEN);
-      sprintf(leave_msg, "%s (%s) left the room\n", username, ip_str);
+      sprintf(leave_msg, "%s (%s) left the room\n", username,
+              ip_str); // announce client has left room
       broadcast_all(leave_msg, assigned_room);
       break;
     }
@@ -343,6 +466,7 @@ void *thread_main(void *args) {
     broadcast(clisockfd, buffer);
   }
 
+  // client has left, remove from list
   remove_client(clisockfd);
   print_clients();
   close(clisockfd);

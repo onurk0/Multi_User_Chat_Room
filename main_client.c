@@ -196,11 +196,9 @@ void *thread_main_send(void *args) {
 int main(int argc, char *argv[]) {
   char name[100];
   char room_request[50]; // to store "new" or requested room number
-  if (argc < 3)
-    error("Usage: ./main_client <IP> <room_number or 'new'>");
 
-  strncpy(room_request, argv[2], sizeof(room_request) - 1);
-  room_request[sizeof(room_request) - 1] = '\0';
+  if (argc < 2)
+    error("Usage: ./main_client <IP> [room_number or 'new']");
 
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0)
@@ -219,18 +217,49 @@ int main(int argc, char *argv[]) {
   if (status < 0)
     error("ERROR connecting");
 
-  // after connecting, send room request to server
-  send(sockfd, room_request, strlen(room_request), 0);
+  // check if room argument was provided
+  if (argc == 3) {
+    // room specified, connect to it
+    strncpy(room_request, argv[2], sizeof(room_request) - 1);
+    room_request[sizeof(room_request) - 1] = '\0';
+    send(sockfd, room_request, strlen(room_request), 0);
+  } else {
+    // no room specified, request list
+    send(sockfd, "list", 4, 0);
+  }
 
   // receive room assignment from server
-  char room_response[100];
-  int n = recv(sockfd, room_response, 99, 0);
+  char room_response[512];
+  int n = recv(sockfd, room_response, 511, 0);
   if (n <= 0)
     error("ERROR receiving room assignment");
   room_response[n] = '\0';
 
   // print room info (or error)
   printf("%s\n", room_response);
+
+  // if sent 'list', user's choice is needed
+  if (argc == 2) {
+    if (strstr(room_response, "Created new room") == NULL) {
+      printf("Choose the room number or type [new] to create a new room: ");
+      fgets(room_request, sizeof(room_request), stdin);
+
+      // remove newline
+      size_t len = strlen(room_request);
+      if (len > 0 && room_request[len - 1] == '\n')
+        room_request[len - 1] = '\0';
+
+      // send choice to server
+      send(sockfd, room_request, strlen(room_request), 0);
+
+      // receive confirmation from server
+      n = recv(sockfd, room_response, 511, 0);
+      if (n <= 0)
+        error("ERROR receiving room assignment");
+      room_response[n] = '\0';
+      printf("%s\n", room_response);
+    }
+  }
 
   // get user's name (up to 99 characters plus null terminator)
   printf("Type your user name:\n");
