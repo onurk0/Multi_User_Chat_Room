@@ -479,12 +479,18 @@ int main(int argc, char *argv[]) {
   if (sockfd < 0)
     error("ERROR opening socket");
 
+  // this segment allows the IP Address to be used again if it is already in use
+  // by another process, effectively preventing errors
+  int opt = 1;
+  if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+    perror("setsockopt");
+    exit(EXIT_FAILURE);
+  }
   struct sockaddr_in serv_addr;
   socklen_t slen = sizeof(serv_addr);
   memset((char *)&serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_addr.s_addr = INADDR_ANY;
-  // serv_addr.sin_addr.s_addr = inet_addr("192.168.1.171");
   serv_addr.sin_port = htons(PORT_NUM);
 
   int status = bind(sockfd, (struct sockaddr *)&serv_addr, slen);
