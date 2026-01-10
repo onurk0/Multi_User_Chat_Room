@@ -11,7 +11,7 @@ To run the program:
 2. Download the source code and extract it to a directory
 3. Enter the direcory containing the source code
 - First, run the server before starting any clients
-- To run, type `make` then `./main_server`
+- To run, type `make` then `sudo ./main_server`
 4. To join a room, type `./main_client **IP address of server**`
 - Example Usage: `./main_client 127.0.0.1` (Running server on same machine as 
 client)
