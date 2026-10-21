@@ -19,14 +19,19 @@ client)
 5. If a client is the first to join, it will automatically be given a new room
 and then be prompted for their name
 - Subsequent clients will be asked to choose a room first, then enter their name
-6. Once connected, each client will be assigned a random text color
+6. Once connected, each user's messages are shown in a color picked from their
+name
 7. Clients can transfer file to each other by doing the following:
-- `SEND _receiving user name_ _file to be transferred`
+- `SEND _receiving user name_ _file to be transferred_`
+- File names may not contain spaces
 - The receiving client will asked if they want to accept or decline the transfer
 (Y/N). The file will be stored in the client's current directory.
 - When Y is entered, the transmission will begin. During file transfers, other
 clients who are chatting will not be impacted during the duration of the
 transfer.
 
-To remove all executable files, type `main clean`
+The server listens on port 1004, which requires `sudo`. To use a different
+port, build with e.g. `make CFLAGS="-O2 -DPORT_NUM=5000"`.
+
+To remove all executable files, type `make clean`
 
